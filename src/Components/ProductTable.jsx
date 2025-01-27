@@ -2,6 +2,8 @@ import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "../supabaseClient";
 import { useNavigate } from "react-router-dom";
 import Loader from "./Loader";
+import Swal from "sweetalert2";
+import HOC from "./HOC/HOC";
 
 function ProductTable() {
   const [products, setProducts] = useState([]);
@@ -9,18 +11,35 @@ function ProductTable() {
   const hasFetched = useRef(false);
   const [categories, setCategories] = useState([]);
   const navigate = useNavigate();
-const handleDelete = (id) => async () => {
-  
-const { error } = await supabase
-.from('Product')
-.delete()
-.eq('id', `${id}`);
-fetchProducts();  
-        
-}
-const handleEdit = (id) => async () => {
-  navigate(`/add-product/${id}`);
-}
+
+  const handleDelete = (id) => async () => {
+    const confirmation = await Swal.fire({
+      title: "Are you sure?",
+      text: "You won't be able to revert this!",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, delete it!",
+    });
+
+    if (confirmation.isConfirmed) {
+      try {
+        const { error } = await supabase.from("Product").delete().eq("id", id);
+        if (error) throw new Error(error.message);
+
+        Swal.fire("Deleted!", "The product has been deleted.", "success");
+        fetchProducts();
+      } catch (err) {
+        console.error("Error deleting product:", err.message);
+        Swal.fire("Error!", "Failed to delete the product.", "error");
+      }
+    }
+  };
+
+  const handleEdit = (id) => async () => {
+    navigate(`/add-product/${id}`);
+  };
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -30,7 +49,7 @@ const handleEdit = (id) => async () => {
           .select("id, category_name");
 
         if (error) throw new Error(error.message);
-        setCategories(data || []); // Populate categories or set an empty array
+        setCategories(data || []);
       } catch (err) {
         console.error("Error fetching categories:", err.message);
       }
@@ -38,6 +57,7 @@ const handleEdit = (id) => async () => {
 
     fetchCategories();
   }, []);
+
   const fetchProducts = async () => {
     try {
       const { data, error } = await supabase.from("Product").select("*");
@@ -55,7 +75,7 @@ const handleEdit = (id) => async () => {
 
   useEffect(() => {
     if (!hasFetched.current) {
-      hasFetched.current = true; // Set the flag to true after the first fetch
+      hasFetched.current = true;
       fetchProducts();
     }
   }, []);
@@ -64,7 +84,9 @@ const handleEdit = (id) => async () => {
     <div className="overflow-x-auto">
       <h2 className="text-xl font-bold mb-4">Product List</h2>
       {isLoading ? (
-        <p className="text-gray-600"><Loader /></p>
+        <p className="text-gray-600">
+          <Loader />
+        </p>
       ) : products.length === 0 ? (
         <p className="text-gray-600">No products available.</p>
       ) : (
@@ -104,13 +126,17 @@ const handleEdit = (id) => async () => {
                 </td>
                 {localStorage.getItem("token") && (
                   <td className="px-4 py-2 border-b border-gray-300">
-                    <button className="p-2 rounded-l-lg cursor-pointer text-white bg-red-500"
-                    onClick={handleDelete(product.id)} >
-                      <i className="fa-solid fa-trash-can"></i>
-                    </button>
-                    <button className="p-2 rounded-r-lg cursor-pointer text-white bg-yellow-500"
-                    onClick={handleEdit(product.id)} >
+                    <button
+                      className="p-2 rounded-l-lg cursor-pointer text-white bg-yellow-500"
+                      onClick={handleEdit(product.id)}
+                    >
                       <i className="fa-solid fa-pen-to-square"></i>
+                    </button>
+                    <button
+                      className="p-2 rounded-r-lg cursor-pointer text-white bg-red-500"
+                      onClick={handleDelete(product.id)}
+                    >
+                      <i className="fa-solid fa-trash-can"></i>
                     </button>
                   </td>
                 )}
@@ -123,4 +149,4 @@ const handleEdit = (id) => async () => {
   );
 }
 
-export default ProductTable;
+export default HOC(ProductTable);

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import toast, { Toaster } from "react-hot-toast";
+import HOC from "./HOC/HOC";
 
 function AddProductForm() {
   const [title, setTitle] = useState("");
@@ -10,10 +11,12 @@ function AddProductForm() {
   const [categories, setCategories] = useState([]); // List of categories
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUpdate, setIsUpdate] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // Loading state for fetching categories
+  const [fetchError, setFetchError] = useState(""); // Error state for fetching categories
   const { id } = useParams();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    console.log("ID from URL:", id);
     if (id) {
       setIsUpdate(true);
       const fetchProduct = async () => {
@@ -29,7 +32,7 @@ function AddProductForm() {
           setPrice(data.Price);
           setCategoryId(data.product_category_id);
         } catch (err) {
-          toast.error("Error fetching product " + err.message);
+          toast.error("Error fetching product: " + err.message);
         }
       };
       fetchProduct();
@@ -39,26 +42,41 @@ function AddProductForm() {
   // Fetch categories on component mount
   useEffect(() => {
     const fetchCategories = async () => {
+      setIsLoading(true);
+      setFetchError("");
       try {
         const { data, error } = await supabase
           .from("product_categories")
           .select("id, category_name");
 
         if (error) throw new Error(error.message);
-        setCategories(data || []); // Populate categories or set an empty array
+        setCategories(data || []);
       } catch (err) {
-        console.error("Error fetching categories:", err.message);
+        setFetchError("Error fetching categories. Please try again later.");
+      } finally {
+        setIsLoading(false);
       }
     };
 
     fetchCategories();
   }, []);
 
+  const resetForm = () => {
+    setTitle("");
+    setPrice("");
+    setCategoryId("");
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (!categoryId) {
-      alert("Please select a category.");
+      toast.error("Please select a category.");
+      return;
+    }
+
+    if (Number(price) <= 0) {
+      toast.error("Price must be a positive number.");
       return;
     }
 
@@ -74,6 +92,8 @@ function AddProductForm() {
           })
           .eq("id", id);
         if (error) throw new Error(error.message);
+        toast.success("Product updated successfully!");
+        navigate('/show-products');
       } else {
         const { error } = await supabase
           .from("Product")
@@ -81,15 +101,12 @@ function AddProductForm() {
             { Title: title, Price: price, product_category_id: categoryId },
           ]);
         if (error) throw new Error(error.message);
+        toast.success("Product added successfully!");
       }
-
-      setTitle("");
-      setPrice("");
-      setCategoryId("");
-      toast.success("Product added successfully");
+      resetForm();
     } catch (err) {
-      console.error("Error adding product:", err.message);
-      toast.error("An unexpected error occurred");
+      console.error("Error submitting product:", err.message);
+      toast.error("An unexpected error occurred.");
     } finally {
       setIsSubmitting(false);
     }
@@ -100,9 +117,12 @@ function AddProductForm() {
       <Toaster />
       <form
         onSubmit={handleSubmit}
-        className="bg-white p-4 shadow-md rounded-md mb-6"
+        className="bg-white p-4 shadow-md rounded-md mb-6 container mx-auto max-w-md"
+        aria-label="Product Form"
       >
-        <h2 className="text-xl font-bold mb-4">Add New Product</h2>
+        <h2 className="text-xl font-bold mb-4">
+          {isUpdate ? "Update Product" : "Add New Product"}
+        </h2>
 
         {/* Title Input */}
         <div className="mb-4">
@@ -119,6 +139,7 @@ function AddProductForm() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
+            aria-required="true"
           />
         </div>
 
@@ -138,6 +159,7 @@ function AddProductForm() {
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             required
+            aria-required="true"
           />
         </div>
 
@@ -149,22 +171,29 @@ function AddProductForm() {
           >
             Category
           </label>
-          <select
-            id="category"
-            className="w-full px-3 py-2 border rounded-md"
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            required
-          >
-            <option value="" disabled>
-              Select Category
-            </option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.category_name}
+          {isLoading ? (
+            <p>Loading categories...</p>
+          ) : fetchError ? (
+            <p className="text-red-500">{fetchError}</p>
+          ) : (
+            <select
+              id="category"
+              className="w-full px-3 py-2 border rounded-md"
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              required
+              aria-required="true"
+            >
+              <option value="" disabled>
+                Select Category
               </option>
-            ))}
-          </select>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.category_name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Submit Button */}
@@ -172,13 +201,15 @@ function AddProductForm() {
           type="submit"
           className={`px-4 py-2 text-white rounded-md ${
             isSubmitting
-              ? "bg-gray-500 cursor-not-allowed"
+              ? "bg-green-500 cursor-not-allowed"
               : "bg-blue-600 hover:bg-blue-700"
           }`}
           disabled={isSubmitting}
         >
           {isUpdate
-            ? "Update Product"
+            ? isSubmitting
+              ? "Updating..."
+              : "Update Product"
             : isSubmitting
             ? "Adding..."
             : "Add Product"}
@@ -186,11 +217,11 @@ function AddProductForm() {
       </form>
 
       {/* Link to View Products */}
-      <Link to="/show-products" className="text-blue-600 hover:underline">
+      <Link to="/show-products" className="text-blue-600 hover:underline flex items-center justify-center">
         View Products
       </Link>
     </>
   );
 }
 
-export default AddProductForm;
+export default HOC(AddProductForm);
